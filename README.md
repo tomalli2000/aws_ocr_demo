@@ -15,7 +15,6 @@
     * AmazonTextractFullAccess
     * AmazonS3ReadOnlyAccess
     * AmazonSNSFullAccess  
-    * 
 * IAM: Create a role named "TextractRole"
   * Attach the following policies (or restricted equivilents):
     * AmazonSQSFullAccess
