@@ -1,0 +1,102 @@
+""" Chase Force For Good- MetroMinistries 
+This function is triggered by new objects in in the metroministriesscannedfile bucket
+It picks up the object, extracts unity number from the object key (file name), and based on the result, places in new location
+version sandbox 2.0
+"""
+
+import json
+import urllib.parse
+import boto3
+
+print('Loading function')
+
+s3 = boto3.client('s3')
+
+#****************************************************
+
+#***** Metropolitan Ministries inputs section *******
+review_bucket = "PASTE REVIEW QUEUE BUCKET NAME HERE"   # bucket for user review
+processed_bucket = "PASTE FINAL DESTINATION BUCKET NAME HERE"  # final destination bucket if successful
+SNS_target_arn = "PASTE SNS ARN HERE"
+
+#****************************************************
+
+
+def determine_unity_number(key):
+# function parses the object key to determine the Unity Number 
+# Input: key of object in the staging_bucket    
+# Output: Unity number, confidence
+    confidence = 1
+    unity_number = key[:6]
+    for i in unity_number:
+        if i not in ['0','1','2','3','4','5','6','7','8','9']:
+            confidence = 0
+    print("Unity Number is: "+unity_number)
+    return(unity_number, confidence)
+    
+
+def  move_file(destination_bucket, source, destination_key):
+# function moves object to destination
+# if folder doesn't alread exist for this unity number, will create
+# Inputs: destination bucket, source bucket/key, destination key
+    bucket_response = s3.copy_object(Bucket=destination_bucket, CopySource=source, Key=destination_key) # save object in processed bucket with new name
+    print (bucket_response)
+
+
+def send_sns(message):
+# function sends a sns message to Metro Min    
+    sns = boto3.client('sns')
+    sns_response = sns.publish(
+        TargetArn=SNS_target_arn,
+        MessageAttributes= {
+            'AWS.SNS.SMS.SMSType': {
+                'DataType': 'String', 
+                'StringValue': 'Transactional'}},
+        Message=json.dumps(message))
+
+
+def lambda_handler(event, context):
+    #print("Received event: " + json.dumps(event, indent=2))
+    print(event)
+    
+    # get the object information from the event
+    staging_bucket = event['Records'][0]['s3']['bucket']['name']  
+    key = urllib.parse.unquote_plus(event['Records'][0]['s3']['object']['key'], encoding='utf-8')
+
+    unity_number, high_confidence = determine_unity_number(key)   # call function to determine the unity number
+
+
+    try:
+        response = s3.get_object(Bucket=staging_bucket, Key=key)   # get the new object from the scanned files bucket
+        print(response.keys())
+
+        source = (staging_bucket+"/"+key)
+        print("Source is: ", source)
+    
+        # if high confidence in the Unity Number, move to the final destination
+        if high_confidence == 1:
+            destination_key = (unity_number+"/"+key)
+            move_file(processed_bucket, source, destination_key)  # move the object to the final destination
+            
+            sns_message = ("Scanned file has been processed successfully and moved to final destination")
+            send_sns(sns_message)       # send sns message letting user know item has not processed successfully
+            
+        # if low confidence in unity number, place in review queue bucket for manual review
+        if high_confidence == 0:
+            print("Unable to determine unity number, moving object to review bucket")
+            move_file(review_bucket, source, key) # move the object to the review queue bucket
+            
+            sns_message = ("Scanned file has been processed, unable to determine unity number. Please review")
+            send_sns(sns_message)       # send sns message letting user know item has not processed successfully
+       
+        s3.delete_object(Bucket=staging_bucket, Key=key)  # remove the object from the staging bucket after moving
+        print("MetroMnistriesProcessedScannedFile function completed execution successfully")
+    
+    
+    except Exception as e:
+        print(e)
+        raise e
+        sns_message= ("there was an error in processing, please resubmit the file")
+        send_sns(sns_message)  # call function to send message reporting error to the user
+
+    
