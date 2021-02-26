@@ -3,6 +3,7 @@
 
 import boto3
 
+
 class ProcessType:
     DETECTION = 1
     ANALYSIS = 2
@@ -64,6 +65,7 @@ def main():
     # document = 'samplepacket.pdf'
     # document = 'Scan2.pdf'
     document = "samplecover-neo.png"
+    #document = "input/07-27-2018 Accounts Payable 06-01-2018 to 06-14-2018.pdf"
     snsArn = "arn:aws:sns:us-east-1:329520552698:OCR_COMPLETE"
     
     analyzer=DocumentProcessor(roleArn, bucket, document,snsArn)
